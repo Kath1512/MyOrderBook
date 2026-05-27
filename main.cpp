@@ -155,107 +155,27 @@ void test(){
 
 void test_event(){
     OrderBook book;
+    std::vector<Message> messages = {
+        AddOrder{OrderType::Limit, TimeInForce::GoodTillCancel, 1, 100, 10, Side::Sell},
+        AddOrder{OrderType::Limit, TimeInForce::GoodTillCancel, 2, 105, 20, Side::Sell},
+        AddOrder{OrderType::Limit, TimeInForce::GoodTillCancel, 3, 110, 15, Side::Sell},
+        AddOrder{OrderType::Limit, TimeInForce::GoodTillCancel, 4, 90, 20, Side::Buy},
+        AddOrder{OrderType::Limit, TimeInForce::GoodTillCancel, 5, 85, 15, Side::Buy},
 
-    // =============================
-    // Resting liquidity
-    // =============================
+        ModifyOrder{4, 102, 20},
 
-    book.process(AddOrder{
-        OrderType::Limit,
-        TimeInForce::GoodTillCancel,
-        1,      // id
-        100,    // price
-        10,     // qty
-        Side::Sell
-    });
+        AddOrder{OrderType::Market, TimeInForce::ImmediateOrCancel, 6, 0, 25, Side::Buy},
 
-    book.process(AddOrder{
-        OrderType::Limit,
-        TimeInForce::GoodTillCancel,
-        2,
-        105,
-        20,
-        Side::Sell
-    });
+        CancelOrder{5},
 
-    book.process(AddOrder{
-        OrderType::Limit,
-        TimeInForce::GoodTillCancel,
-        3,
-        110,
-        15,
-        Side::Sell
-    });
+        AddOrder{OrderType::Limit, TimeInForce::GoodTillCancel, 7, 100, 30, Side::Sell}
+    };
 
-    book.process(AddOrder{
-        OrderType::Limit,
-        TimeInForce::GoodTillCancel,
-        4,
-        90,
-        20,
-        Side::Buy
-    });
+    for (const auto& msg : messages) {
+        book.process_message(msg);
+    }
 
-    book.process(AddOrder{
-        OrderType::Limit,
-        TimeInForce::GoodTillCancel,
-        5,
-        85,
-        15,
-        Side::Buy
-    });
-
-    // =============================
-    // Modify bid upward
-    // cancel BUY 20 @90
-    // add BUY 20 @102
-    // crosses ask 100
-    // =============================
-
-    book.process(ModifyOrder{
-        4,
-        102,
-        20
-    });
-
-    // =============================
-    // IOC market buy
-    // buys remaining ask liquidity
-    // =============================
-
-    book.process(AddOrder{
-        OrderType::Market,
-        TimeInForce::ImmediateOrCancel,
-        6,
-        0,
-        25,
-        Side::Buy
-    });
-
-    // =============================
-    // Cancel resting bid
-    // =============================
-
-    book.process(CancelOrder{
-        5
-    });
-
-    // =============================
-    // Aggressive sell
-    // partially fills then rests
-    // =============================
-
-    book.process(AddOrder{
-        OrderType::Limit,
-        TimeInForce::GoodTillCancel,
-        7,
-        100,
-        30,
-        Side::Sell
-    });
-
-    std::cout << book.get_trades();
-
+    std::cout << book.get_trades() << "\n";
     std::cout << book << "\n";
 }
 int main(){

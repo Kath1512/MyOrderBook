@@ -240,14 +240,7 @@ public:
         return quantity <= 0;
     }
 
-    void process_message(const Message& msg);
-
-    void process(const AddOrder& add_order_msg);
-
-    void process(const ModifyOrder& modify_order_msg);
-
-    void process(const CancelOrder& cancel_order_msg);
-
+    
     bool can_fully_fill(const Order& order) const;
     AddOrderResult add_order(Order order); //need improvement
     AddOrderResult add_limit_order(Order&& order);
@@ -260,6 +253,15 @@ public:
     bool remove_look_up(OrderId order_id);
     
     MaybeOrderRef find_order(OrderId order_id) const;
+
+    
+    void process(const AddOrder& add_order_msg);
+    
+    void process(const ModifyOrder& modify_order_msg);
+    
+    void process(const CancelOrder& cancel_order_msg);
+    
+    void process_message(const Message& msg);
     //debug method
     template<typename Levels>
     std::string levels_to_string(Levels& levels) const {

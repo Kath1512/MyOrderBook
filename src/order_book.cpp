@@ -218,9 +218,6 @@ bool OrderBook::modify_order(OrderId order_id, Price new_price, Quantity new_qua
     return res.status_ != AddOrderStatus::Failed;
 }
 
-// void OrderBook::process_message(const Message& msg){
-
-// }
 
 void OrderBook::process(const AddOrder& add_order_msg){
     add_order(Order(add_order_msg));
@@ -238,6 +235,13 @@ void OrderBook::process(const CancelOrder& cancel_order_msg){
     cancel_order(cancel_order_msg.id);
 }
 
+void OrderBook::process_message(const Message& msg){
+    std::visit([this](auto&& action){
+            process(action);
+        },
+        msg
+    );
+}
 
 
 //debug method
