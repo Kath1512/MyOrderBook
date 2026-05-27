@@ -24,6 +24,24 @@ Order::Order(OrderType order_type,
             // }
         }
 
+Order::Order(const AddOrder& msg)
+        : order_type_(msg.order_type),
+          time_in_force_(msg.time_in_force),
+          order_id_(msg.order_id),
+          price_(msg.price),
+          initial_quantity_(msg.quantity),
+          remaining_quantity_(msg.quantity),
+          side_(msg.side) {}
+
+Order::Order(const Order& other)
+        : order_type_(other.get_order_type()),
+        time_in_force_(other.get_time_in_force()),
+        order_id_(other.get_order_id()),
+        price_(other.get_price()),
+        initial_quantity_(other.get_initial_quantity()),
+        remaining_quantity_(other.get_remaining_quantity()),
+        side_(other.get_side()) {}
+
 OrderType Order::get_order_type() const {
     return order_type_;
 }

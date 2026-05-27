@@ -3,8 +3,10 @@
 #include <format>
 #include <ostream>
 #include <stdexcept>
+#include <optional>
 #include "types.h"
 #include "helpers.h"
+#include "order_messages.h"
 
 class Order{
 private:
@@ -17,6 +19,22 @@ private:
     Side side_;
     SequenceNumber sequence_number_;
 public:
+    static Order from_replacement(
+        const Order& order,
+        Price new_price,
+        Quantity new_quantity
+    ) {
+        return Order(
+            order.get_order_type(),
+            order.get_time_in_force(),
+            order.get_order_id(),
+            new_price,
+            new_quantity,
+            order.get_side(),
+            order.get_sequence_number()
+        );
+    }
+
     Order(OrderType order_type,
           TimeInForce time_in_force,
           OrderId order_id,
@@ -24,6 +42,9 @@ public:
           Quantity quantity,
           Side side,
           SequenceNumber sequence_number);
+    
+    Order(const AddOrder& msg);
+    Order(const Order& order);
 
     OrderType get_order_type() const;
     TimeInForce get_time_in_force() const;
@@ -47,3 +68,5 @@ public:
 
     friend std::ostream& operator<< (std::ostream& os, const Order& order);
 };
+
+using MaybeOrderRef = std::optional<std::reference_wrapper<const Order>>;

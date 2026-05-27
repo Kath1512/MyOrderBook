@@ -51,14 +51,7 @@ void run_order_book_test(const OrderBookTestCase& tc, bool logging = false) {
     OrderBook book;
     for (const TestInput& input : tc.inputs) {
         std::visit([&book](const auto& action) {
-            using T = std::decay_t<decltype(action)>;
-            if constexpr (std::is_same_v<T, AddOrder>) {
-                book.add_order(Order(action.order_type, action.tif, action.id,
-                                     action.price, action.qty,
-                                     action.side, action.seq));
-            } else {
-                book.cancel_order(action.id);
-            }
+            book.process(action);
         }, input);
     }
 
@@ -564,6 +557,101 @@ static const OrderBookTestCase tc_all_in_one_market_and_limit_orders {
     },
 };
 
+// ── 30. ERR-002 regression: cancel after full fill ────────────────────────────
+// Order 1 is fully consumed by order 2. A subsequent cancel of order 1's ID
+// must be a no-op (false return) — not UB from a dangling iterator.
+// Verified by: no crash, book is empty, only one trade recorded.
+static const OrderBookTestCase tc_cancel_after_fill {
+    .name = "cancel_after_fill",
+    .inputs = {
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit, GTC, 2, 100, 10, Side::Buy},   // fully fills order 1
+        CancelOrder{1},                                 // stale ID — must be a no-op
+    },
+    .expected_trades = {
+        {.buyer_id=2, .seller_id=1, .price=100, .quantity=10},
+    },
+    .expected_levels = {},
+};
+
+// ── 31. Modify: price change ──────────────────────────────────────────────────
+// A resting ask is moved from price 100 to price 110.
+// The old level disappears; the new level appears with the same quantity.
+static const OrderBookTestCase tc_modify_price {
+    .name = "modify_price",
+    .inputs = {
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        ModifyOrder{1, 110, 10},
+    },
+    .expected_trades = {},
+    .expected_levels = {
+        {.side=Side::Sell, .price=110, .total_quantity=10, .order_count=1},
+    },
+};
+
+// ── 32. Modify: quantity reduction ───────────────────────────────────────────
+// Reducing the quantity of a resting ask; price is unchanged.
+static const OrderBookTestCase tc_modify_quantity {
+    .name = "modify_quantity",
+    .inputs = {
+        AddOrder{Limit, GTC, 1, 100, 20, Side::Sell},
+        ModifyOrder{1, 100, 8},
+    },
+    .expected_trades = {},
+    .expected_levels = {
+        {.side=Side::Sell, .price=100, .total_quantity=8, .order_count=1},
+    },
+};
+
+// ── 33. Modify loses time priority ────────────────────────────────────────────
+// Two sells rest at the same price. Order 1 (earlier) is modified (cancel +
+// re-add), putting it behind order 2. The incoming buy fills order 2 first.
+static const OrderBookTestCase tc_modify_loses_priority {
+    .name = "modify_loses_priority",
+    .inputs = {
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},   // arrives first
+        AddOrder{Limit, GTC, 2, 100, 10, Side::Sell},   // arrives second
+        ModifyOrder{1, 100, 10},                         // re-added: now behind order 2
+        AddOrder{Limit, GTC, 3, 100, 10, Side::Buy},    // must fill order 2 first
+    },
+    .expected_trades = {
+        {.buyer_id=3, .seller_id=2, .price=100, .quantity=10},
+    },
+    .expected_levels = {
+        {.side=Side::Sell, .price=100, .total_quantity=10, .order_count=1},
+    },
+};
+
+// ── 34. Modify crosses the book ───────────────────────────────────────────────
+// A resting bid at 100 is modified to 110, which crosses the resting ask at
+// 110. The modify causes an immediate match; book is empty afterward.
+static const OrderBookTestCase tc_modify_crosses_book {
+    .name = "modify_crosses_book",
+    .inputs = {
+        AddOrder{Limit, GTC, 1, 110, 10, Side::Sell},   // rests
+        AddOrder{Limit, GTC, 2, 100, 10, Side::Buy},    // rests; 100 < 110, no cross
+        ModifyOrder{2, 110, 10},                         // raises bid to 110 — crosses ask
+    },
+    .expected_trades = {
+        {.buyer_id=2, .seller_id=1, .price=110, .quantity=10},
+    },
+    .expected_levels = {},
+};
+
+// ── 35. Modify nonexistent order ──────────────────────────────────────────────
+// Modifying an unknown order ID is a no-op; the book state is unchanged.
+static const OrderBookTestCase tc_modify_nonexistent {
+    .name = "modify_nonexistent",
+    .inputs = {
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        ModifyOrder{99, 100, 5},                         // ID 99 does not exist
+    },
+    .expected_trades = {},
+    .expected_levels = {
+        {.side=Side::Sell, .price=100, .total_quantity=10, .order_count=1},
+    },
+};
+
 void data_driven_suite() {
     run_order_book_test(tc_exact_match);
     run_order_book_test(tc_partial_fill);
@@ -594,6 +682,13 @@ void data_driven_suite() {
     run_order_book_test(tc_market_sell_fifo);
     run_order_book_test(tc_market_buy_after_cancel);
     run_order_book_test(tc_all_in_one_market_and_limit_orders);
+    // ERR-002 regression + event-driven process() + modify behaviour
+    run_order_book_test(tc_cancel_after_fill);
+    run_order_book_test(tc_modify_price);
+    run_order_book_test(tc_modify_quantity);
+    run_order_book_test(tc_modify_loses_priority);
+    run_order_book_test(tc_modify_crosses_book);
+    run_order_book_test(tc_modify_nonexistent);
 }
 void run_one(){
     run_order_book_test(tc_all_in_one_market_and_limit_orders, true);

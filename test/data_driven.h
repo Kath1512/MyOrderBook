@@ -8,6 +8,7 @@
 #include <string_view>
 #include <variant>
 #include <vector>
+#include "order_messages.h"
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Data-driven test framework for OrderBook
@@ -49,24 +50,9 @@ namespace dd {
     dd::record((a) == (b), #a " == " #b, __FILE__, __LINE__)
 
 
-// ── Input actions ─────────────────────────────────────────────────────────────
 
-struct AddOrder {
-    OrderType      order_type;
-    TimeInForce    tif;
-    OrderId        id;
-    Price          price;
-    Quantity       qty;
-    Side           side;
-    SequenceNumber seq = 1;
-};
-
-struct CancelOrder {
-    OrderId id;
-};
-
-// A single test step: either add an order or cancel one.
-using TestInput = std::variant<AddOrder, CancelOrder>;
+// A single test step: add, cancel, or modify an order.
+using TestInput = std::variant<AddOrder, CancelOrder, ModifyOrder>;
 
 
 // ── Expected outcomes ─────────────────────────────────────────────────────────

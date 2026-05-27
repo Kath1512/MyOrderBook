@@ -12,6 +12,7 @@
 #include "order.h"
 #include "price_level.h"
 #include "trade.h"
+#include "order_messages.h"
 
 
 struct OrderLocation {
@@ -26,6 +27,7 @@ struct AddOrderResult {
     Quantity remaining_quantity_;
 
     static AddOrderResult from_match(
+        OrderType order_type,
         Quantity execution_quantity,
         Quantity remaining_quantity) {
 
@@ -38,8 +40,15 @@ struct AddOrderResult {
         }
 
         if(execution_quantity == 0){
+            if(order_type == OrderType::Market){
+                return AddOrderResult {
+                    AddOrderStatus::Rejected,
+                    execution_quantity,
+                    remaining_quantity
+                };
+            }
             return AddOrderResult {
-                AddOrderStatus::Rejected,
+                AddOrderStatus::Resting,
                 execution_quantity,
                 remaining_quantity
             };
@@ -54,11 +63,13 @@ struct AddOrderResult {
 
     static AddOrderResult from_match(
         bool success, 
+        OrderType order_type,
         Quantity execution_quantity,
         Quantity remaining_quantity){
 
         if(success){
             return AddOrderResult::from_match(
+                order_type,
                 execution_quantity, 
                 remaining_quantity
             );
@@ -114,8 +125,8 @@ public:
     const TradeHistory& get_trades() const;
 
     // ── Level inspection (used by the test framework) ─────────────────────
-    bool        has_level(Side side, Price price) const;
-    Quantity    level_quantity(Side side, Price price) const;
+    bool has_level(Side side, Price price) const;
+    Quantity level_quantity(Side side, Price price) const;
     std::size_t level_order_count(Side side, Price price) const;
     std::size_t bid_level_count() const;
     std::size_t ask_level_count() const;
@@ -135,6 +146,7 @@ public:
             order.get_price(),
             order_it.value()
         );
+
 
         return inserted_in_look_up;
     }
@@ -228,7 +240,13 @@ public:
         return quantity <= 0;
     }
 
-    
+    void process_message(const Message& msg);
+
+    void process(const AddOrder& add_order_msg);
+
+    void process(const ModifyOrder& modify_order_msg);
+
+    void process(const CancelOrder& cancel_order_msg);
 
     bool can_fully_fill(const Order& order) const;
     AddOrderResult add_order(Order order); //need improvement
@@ -238,7 +256,10 @@ public:
     Quantity match_sell(Order& sell_order);
     Quantity execute_trade(Order& order, PriceLevel& counterpart_level);
     bool cancel_order(OrderId order_id);
-
+    bool modify_order(OrderId order_id, Price new_price, Quantity new_quantity);
+    bool remove_look_up(OrderId order_id);
+    
+    MaybeOrderRef find_order(OrderId order_id) const;
     //debug method
     template<typename Levels>
     std::string levels_to_string(Levels& levels) const {

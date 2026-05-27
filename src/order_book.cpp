@@ -73,13 +73,14 @@ AddOrderResult OrderBook::add_limit_order(Order&& order){
     
     if(tif == TimeInForce::FillOrKill && !can_fully_fill(order)){
         return AddOrderResult{
-            AddOrderStatus::Rejected,
+            .status_ = AddOrderStatus::Rejected,
             .execution_quantity_ = 0,
             .remaining_quantity_ = order.get_remaining_quantity()
         };
     }
     
     Quantity execution_quantity;
+    // std::cout << order.get_order_id() << std::endl;
 
     if(order.is_buy()){
         execution_quantity = match_buy(order);
@@ -94,18 +95,21 @@ AddOrderResult OrderBook::add_limit_order(Order&& order){
         if(order.is_buy()){
             return AddOrderResult::from_match(
                 add_order_to_side(bids_, std::move(order)),
+                order.get_order_type(),
                 execution_quantity,
                 remaining_quantity
             );
         }
         return AddOrderResult::from_match(
             add_order_to_side(asks_, std::move(order)),
+            order.get_order_type(),
             execution_quantity,
             remaining_quantity
         );
     }
     
     return AddOrderResult::from_match(
+        order.get_order_type(),
         execution_quantity, 
         remaining_quantity
     );
@@ -123,13 +127,16 @@ AddOrderResult OrderBook::add_market_order(Order&& order){
     }
 
     return AddOrderResult::from_match(
+        order.get_order_type(),
         execution_quantity,
         order.get_remaining_quantity()
     );
 }
+bool OrderBook::remove_look_up(OrderId order_id){
+    return order_look_up_.erase(order_id);
+}
 
 AddOrderResult OrderBook::add_order(Order order){ //need improvement
-    //add price level if not exist
     if(order.is_limit_order()){
         return add_limit_order(std::move(order));
     }
@@ -154,8 +161,14 @@ Quantity OrderBook::execute_trade(Order& incoming_order, PriceLevel& counterpart
     Trade trade = Trade::from_match(incoming_order, counterpart_level.front_order());
     trades_.push_back(trade); //need improvment: preallocate
 
+    //front order getting filled should be removed out of lookup
+    bool getFilled = (counterpart_level.front_order().get_remaining_quantity() == execution_quantity);
+    OrderId front_order_id = counterpart_level.front_order().get_order_id();
+
     incoming_order.fill_order(execution_quantity);
     counterpart_level.fill_front_order(execution_quantity);
+
+    if(getFilled) remove_look_up(front_order_id);
 
     return execution_quantity;
 }
@@ -166,16 +179,64 @@ bool OrderBook::cancel_order(OrderId order_id){
         return false;
     }
     
-    OrderLocation& order_location = it->second;
+    OrderLocation order_location = it->second;
     const Side& side = order_location.side_;
 
+    order_look_up_.erase(it);
+    
     if(side == Side::Buy){
-        return cancel_order_side(bids_, order_location);
+        return cancel_order_side(bids_, std::move(order_location));
     }
     
-    return cancel_order_side(asks_, order_location);
+    return cancel_order_side(asks_, std::move(order_location));
 }
 
+MaybeOrderRef OrderBook::find_order(OrderId order_id) const {
+    const auto it = order_look_up_.find(order_id);
+    if(it == order_look_up_.end()){
+        return std::nullopt;
+    }
+
+    const OrderLocation& order_location = it->second;
+    return *order_location.order_it_;
+
+}
+
+bool OrderBook::modify_order(OrderId order_id, Price new_price, Quantity new_quantity){
+    const auto& maybe_old_order = find_order(order_id);
+    if(!maybe_old_order.has_value()){
+        return false;
+    }
+
+    const Order& old_order = maybe_old_order.value().get();
+    Order new_order = Order::from_replacement(old_order, new_price, new_quantity);
+
+    cancel_order(order_id);
+
+    AddOrderResult res = add_order(std::move(new_order));
+
+    return res.status_ != AddOrderStatus::Failed;
+}
+
+// void OrderBook::process_message(const Message& msg){
+
+// }
+
+void OrderBook::process(const AddOrder& add_order_msg){
+    add_order(Order(add_order_msg));
+}
+
+void OrderBook::process(const ModifyOrder& modify_order_msg){
+    modify_order(
+        modify_order_msg.id,
+        modify_order_msg.new_price,
+        modify_order_msg.new_quantity
+    );
+}
+
+void OrderBook::process(const CancelOrder& cancel_order_msg){
+    cancel_order(cancel_order_msg.id);
+}
 
 
 
