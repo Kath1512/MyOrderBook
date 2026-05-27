@@ -6,6 +6,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <algorithm>
+#include <iostream>
 
 #include "types.h"
 #include "order.h"
@@ -13,10 +14,73 @@
 #include "trade.h"
 
 
-struct OrderLocation{
+struct OrderLocation {
     Side side_;
     Price price_;
     OrderIterator order_it_;
+};
+
+struct AddOrderResult {
+    AddOrderStatus status_;
+    Quantity execution_quantity_;
+    Quantity remaining_quantity_;
+
+    static AddOrderResult from_match(
+        Quantity execution_quantity,
+        Quantity remaining_quantity) {
+
+        if(remaining_quantity == 0){
+            return AddOrderResult {
+                AddOrderStatus::FullyFilled,
+                execution_quantity,
+                remaining_quantity
+            };
+        }
+
+        if(execution_quantity == 0){
+            return AddOrderResult {
+                AddOrderStatus::Rejected,
+                execution_quantity,
+                remaining_quantity
+            };
+        }
+
+        return AddOrderResult {
+                AddOrderStatus::PartiallyFilled,
+                execution_quantity,
+                remaining_quantity
+        };
+    }
+
+    static AddOrderResult from_match(
+        bool success, 
+        Quantity execution_quantity,
+        Quantity remaining_quantity){
+
+        if(success){
+            return AddOrderResult::from_match(
+                execution_quantity, 
+                remaining_quantity
+            );
+        }
+        else{
+            return AddOrderResult{
+                AddOrderStatus::Failed,
+                0,
+                remaining_quantity
+            };
+        }
+    }
+
+    std::string to_string() const {
+        return std::format(
+            "Order status: {}, execution quantity: {}, "
+            "remaining quantity: {}",
+            ::to_string(status_),
+            execution_quantity_,
+            remaining_quantity_
+        );
+    }
 };
 
 using TradeHistory = std::vector<Trade>;
@@ -64,7 +128,7 @@ public:
 
         auto [it, inserted_in_level] = levels.try_emplace(price, price);
 
-        MaybeOrderIterator order_it = it->second.add_order(order);
+        MaybeOrderIterator order_it = it->second.add_order(std::move(order));
         auto [look_up_it, inserted_in_look_up] = order_look_up_.try_emplace(
             order.get_order_id(),
             order.get_side(),
@@ -76,11 +140,12 @@ public:
     }
 
     template<typename BookLevelsSide, typename Compare>
-    void match_against_side(Order& order, BookLevelsSide& levels, Compare comp){
+    Quantity match_limit_order_against_side(Order& order, BookLevelsSide& levels, Compare comp){
         //scan from front of asks -> end
         const Price price = order.get_price();
+        Quantity execution_quantity = 0;
 
-        if(levels.empty()) return;
+        if(levels.empty()) return 0;
 
         auto levels_iter = levels.begin();
         while(!order.is_filled()
@@ -89,13 +154,40 @@ public:
 
                 PriceLevel& current_counterpart_level = levels_iter->second;
                 while(!order.is_filled() && !current_counterpart_level.empty()){
-                    execute_trade(order, current_counterpart_level);
+                    execution_quantity += execute_trade(order, current_counterpart_level);
                 }
 
                 if(levels_iter->second.empty()){
                     levels_iter = levels.erase(levels_iter);
                 }
         }
+
+        return execution_quantity;
+    }
+
+    template<typename BookLevelSide>
+    Quantity match_market_order_against_side(BookLevelSide& levels, Order& order){
+        Quantity execution_quantity = 0;
+
+        if(levels.empty()){
+            return 0;
+        }
+
+        auto levels_iter = levels.begin();
+        while(!order.is_filled()
+            && levels_iter != levels.end()){
+
+                PriceLevel& current_counterpart_level = levels_iter->second;
+                while(!order.is_filled() && !current_counterpart_level.empty()){
+                    execution_quantity += execute_trade(order, current_counterpart_level);
+                }
+
+                if(levels_iter->second.empty()){
+                    levels_iter = levels.erase(levels_iter);
+                }
+        }
+
+        return execution_quantity;
     }
 
     template<typename BookLevelSide>
@@ -135,15 +227,16 @@ public:
 
         return quantity <= 0;
     }
+
     
 
     bool can_fully_fill(const Order& order) const;
-    bool add_order(Order order); //need improvement
-    bool add_limit_order(Order&& order);
-    bool add_market_order(Order&& order);
-    void match_buy(Order& buy_order);
-    void match_sell(Order& sell_order);
-    void execute_trade(Order& order, PriceLevel& counterpart_level);
+    AddOrderResult add_order(Order order); //need improvement
+    AddOrderResult add_limit_order(Order&& order);
+    AddOrderResult add_market_order(Order&& order);
+    Quantity match_buy(Order& buy_order);
+    Quantity match_sell(Order& sell_order);
+    Quantity execute_trade(Order& order, PriceLevel& counterpart_level);
     bool cancel_order(OrderId order_id);
 
     //debug method
@@ -167,3 +260,5 @@ public:
 
     friend std::ostream& operator << (std::ostream& os, const OrderBook& order_book);
 };
+
+std::ostream& operator << (std::ostream& os, const AddOrderResult& result);

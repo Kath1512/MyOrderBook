@@ -44,7 +44,7 @@ void check_levels(const OrderBook&                  book,
 
 // ── run_order_book_test ───────────────────────────────────────────────────────
 
-void run_order_book_test(const OrderBookTestCase& tc) {
+void run_order_book_test(const OrderBookTestCase& tc, bool logging = false) {
     dd::current_test = tc.name;
     std::cout << "[DD] " << tc.name << "\n";
 
@@ -53,7 +53,7 @@ void run_order_book_test(const OrderBookTestCase& tc) {
         std::visit([&book](const auto& action) {
             using T = std::decay_t<decltype(action)>;
             if constexpr (std::is_same_v<T, AddOrder>) {
-                book.add_order(Order(action.tif, action.id,
+                book.add_order(Order(action.order_type, action.tif, action.id,
                                      action.price, action.qty,
                                      action.side, action.seq));
             } else {
@@ -64,6 +64,11 @@ void run_order_book_test(const OrderBookTestCase& tc) {
 
     check_trades(book.get_trades(), tc.expected_trades);
     check_levels(book, tc.expected_levels);
+
+    if(logging){
+        std::cout << book.get_trades() << "\n";
+        std::cout << book << "\n";
+    }
 }
 
 // ── Example test cases ────────────────────────────────────────────────────────
@@ -72,6 +77,8 @@ void run_order_book_test(const OrderBookTestCase& tc) {
 static constexpr TimeInForce GTC = TimeInForce::GoodTillCancel;
 static constexpr TimeInForce IOC = TimeInForce::ImmediateOrCancel;
 static constexpr TimeInForce FOK = TimeInForce::FillOrKill;
+static constexpr OrderType Limit  = OrderType::Limit;
+static constexpr OrderType Market = OrderType::Market;
 
 // ── 1. Exact match ────────────────────────────────────────────────────────────
 // Two orders of equal size crossing at the same price.
@@ -79,8 +86,8 @@ static constexpr TimeInForce FOK = TimeInForce::FillOrKill;
 static const OrderBookTestCase tc_exact_match {
     .name = "exact_match",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},
-        AddOrder{GTC, 2, 100, 10, Side::Buy},
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit, GTC, 2, 100, 10, Side::Buy},
     },
     .expected_trades = {
         {.buyer_id=2, .seller_id=1, .price=100, .quantity=10},
@@ -94,8 +101,8 @@ static const OrderBookTestCase tc_exact_match {
 static const OrderBookTestCase tc_partial_fill {
     .name = "partial_fill",
     .inputs = {
-        AddOrder{GTC, 1, 100, 20, Side::Sell},
-        AddOrder{GTC, 2, 100,  8, Side::Buy},
+        AddOrder{Limit, GTC, 1, 100, 20, Side::Sell},
+        AddOrder{Limit, GTC, 2, 100,  8, Side::Buy},
     },
     .expected_trades = {
         {.buyer_id=2, .seller_id=1, .price=100, .quantity=8},
@@ -111,9 +118,9 @@ static const OrderBookTestCase tc_partial_fill {
 static const OrderBookTestCase tc_fifo_same_price {
     .name = "fifo_same_price",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},   // arrives first
-        AddOrder{GTC, 2, 100, 15, Side::Sell},   // arrives second
-        AddOrder{GTC, 3, 100, 12, Side::Buy},    // fills 10 from #1, then 2 from #2
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},   // arrives first
+        AddOrder{Limit, GTC, 2, 100, 15, Side::Sell},   // arrives second
+        AddOrder{Limit, GTC, 3, 100, 12, Side::Buy},    // fills 10 from #1, then 2 from #2
     },
     .expected_trades = {
         {.buyer_id=3, .seller_id=1, .price=100, .quantity=10},
@@ -129,9 +136,9 @@ static const OrderBookTestCase tc_fifo_same_price {
 static const OrderBookTestCase tc_multi_level_sweep {
     .name = "multi_level_sweep",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},
-        AddOrder{GTC, 2, 110,  5, Side::Sell},
-        AddOrder{GTC, 3, 110, 15, Side::Buy},    // crosses both levels
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit, GTC, 2, 110,  5, Side::Sell},
+        AddOrder{Limit, GTC, 3, 110, 15, Side::Buy},    // crosses both levels
     },
     .expected_trades = {
         {.buyer_id=3, .seller_id=1, .price=100, .quantity=10},
@@ -145,9 +152,9 @@ static const OrderBookTestCase tc_multi_level_sweep {
 static const OrderBookTestCase tc_gtc_rests_then_matches {
     .name = "gtc_rests_then_matches",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},   // rests
-        AddOrder{GTC, 2,  90,  5, Side::Buy},    // 90 < 100: does not cross, rests
-        AddOrder{GTC, 3,  90,  5, Side::Sell},   // crosses bid #2 at 90
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},   // rests
+        AddOrder{Limit, GTC, 2,  90,  5, Side::Buy},    // 90 < 100: does not cross, rests
+        AddOrder{Limit, GTC, 3,  90,  5, Side::Sell},   // crosses bid #2 at 90
     },
     .expected_trades = {
         {.buyer_id=2, .seller_id=3, .price=90, .quantity=5},
@@ -163,8 +170,8 @@ static const OrderBookTestCase tc_gtc_rests_then_matches {
 static const OrderBookTestCase tc_ioc_partial_fill {
     .name = "ioc_partial_fill",
     .inputs = {
-        AddOrder{GTC, 1, 100,  5, Side::Sell},
-        AddOrder{IOC, 2, 100, 10, Side::Buy},    // fills 5, cancels leftover 5
+        AddOrder{Limit, GTC, 1, 100,  5, Side::Sell},
+        AddOrder{Limit, IOC, 2, 100, 10, Side::Buy},    // fills 5, cancels leftover 5
     },
     .expected_trades = {
         {.buyer_id=2, .seller_id=1, .price=100, .quantity=5},
@@ -177,7 +184,7 @@ static const OrderBookTestCase tc_ioc_partial_fill {
 static const OrderBookTestCase tc_ioc_no_fill {
     .name = "ioc_no_fill",
     .inputs = {
-        AddOrder{IOC, 1, 100, 10, Side::Buy},    // nothing to match against
+        AddOrder{Limit, IOC, 1, 100, 10, Side::Buy},    // nothing to match against
     },
     .expected_trades = {},
     .expected_levels = {},
@@ -189,8 +196,8 @@ static const OrderBookTestCase tc_ioc_no_fill {
 static const OrderBookTestCase tc_fok_rejected {
     .name = "fok_rejected",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},
-        AddOrder{FOK, 2, 100, 15, Side::Buy},    // needs 15, only 10 available → rejected
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit, FOK, 2, 100, 15, Side::Buy},    // needs 15, only 10 available → rejected
     },
     .expected_trades = {},
     .expected_levels = {
@@ -204,9 +211,9 @@ static const OrderBookTestCase tc_fok_rejected {
 static const OrderBookTestCase tc_fok_accepted {
     .name = "fok_accepted",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},
-        AddOrder{GTC, 2, 105,  5, Side::Sell},
-        AddOrder{FOK, 3, 105, 15, Side::Buy},    // 10@100 + 5@105 = 15 → fills
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit, GTC, 2, 105,  5, Side::Sell},
+        AddOrder{Limit, FOK, 3, 105, 15, Side::Buy},    // 10@100 + 5@105 = 15 → fills
     },
     .expected_trades = {
         {.buyer_id=3, .seller_id=1, .price=100, .quantity=10},
@@ -221,9 +228,9 @@ static const OrderBookTestCase tc_fok_accepted {
 static const OrderBookTestCase tc_sell_sweep_bids {
     .name = "sell_sweep_bids",
     .inputs = {
-        AddOrder{GTC, 1, 100, 15, Side::Buy},
-        AddOrder{GTC, 2,  90, 10, Side::Buy},
-        AddOrder{GTC, 3,  85, 20, Side::Sell},   // crosses both bids; 15+5=20
+        AddOrder{Limit, GTC, 1, 100, 15, Side::Buy},
+        AddOrder{Limit, GTC, 2,  90, 10, Side::Buy},
+        AddOrder{Limit, GTC, 3,  85, 20, Side::Sell},   // crosses both bids; 15+5=20
     },
     .expected_trades = {
         {.buyer_id=1, .seller_id=3, .price=100, .quantity=15},
@@ -240,8 +247,8 @@ static const OrderBookTestCase tc_sell_sweep_bids {
 static const OrderBookTestCase tc_gtc_partial_fill_rests {
     .name = "gtc_partial_fill_rests",
     .inputs = {
-        AddOrder{GTC, 1, 100,  5, Side::Sell},
-        AddOrder{GTC, 2, 100, 12, Side::Buy},    // fills 5, leftover 7 rests as bid
+        AddOrder{Limit, GTC, 1, 100,  5, Side::Sell},
+        AddOrder{Limit, GTC, 2, 100, 12, Side::Buy},    // fills 5, leftover 7 rests as bid
     },
     .expected_trades = {
         {.buyer_id=2, .seller_id=1, .price=100, .quantity=5},
@@ -256,8 +263,8 @@ static const OrderBookTestCase tc_gtc_partial_fill_rests {
 static const OrderBookTestCase tc_ioc_sell {
     .name = "ioc_sell",
     .inputs = {
-        AddOrder{GTC, 1, 100,  8, Side::Buy},
-        AddOrder{IOC, 2, 100, 15, Side::Sell},   // fills 8, cancels leftover 7
+        AddOrder{Limit, GTC, 1, 100,  8, Side::Buy},
+        AddOrder{Limit, IOC, 2, 100, 15, Side::Sell},   // fills 8, cancels leftover 7
     },
     .expected_trades = {
         {.buyer_id=1, .seller_id=2, .price=100, .quantity=8},
@@ -270,8 +277,8 @@ static const OrderBookTestCase tc_ioc_sell {
 static const OrderBookTestCase tc_fok_sell_rejected {
     .name = "fok_sell_rejected",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Buy},
-        AddOrder{FOK, 2, 100, 15, Side::Sell},   // needs 15, only 10 available
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Buy},
+        AddOrder{Limit, FOK, 2, 100, 15, Side::Sell},   // needs 15, only 10 available
     },
     .expected_trades = {},
     .expected_levels = {
@@ -284,9 +291,9 @@ static const OrderBookTestCase tc_fok_sell_rejected {
 static const OrderBookTestCase tc_fok_sell_accepted {
     .name = "fok_sell_accepted",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Buy},
-        AddOrder{GTC, 2,  90,  5, Side::Buy},
-        AddOrder{FOK, 3,  90, 15, Side::Sell},   // 10+5=15 → fills
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Buy},
+        AddOrder{Limit, GTC, 2,  90,  5, Side::Buy},
+        AddOrder{Limit, FOK, 3,  90, 15, Side::Sell},   // 10+5=15 → fills
     },
     .expected_trades = {
         {.buyer_id=1, .seller_id=3, .price=100, .quantity=10},
@@ -301,10 +308,10 @@ static const OrderBookTestCase tc_fok_sell_accepted {
 static const OrderBookTestCase tc_cancel_then_rematch {
     .name = "cancel_then_rematch",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},
-        AddOrder{GTC, 2,  90,  5, Side::Buy},    // rests; does not cross ask
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit, GTC, 2,  90,  5, Side::Buy},    // rests; does not cross ask
         CancelOrder{2},
-        AddOrder{GTC, 3, 100, 10, Side::Buy},    // crosses ask 1
+        AddOrder{Limit, GTC, 3, 100, 10, Side::Buy},    // crosses ask 1
     },
     .expected_trades = {
         {.buyer_id=3, .seller_id=1, .price=100, .quantity=10},
@@ -318,10 +325,10 @@ static const OrderBookTestCase tc_cancel_then_rematch {
 static const OrderBookTestCase tc_multiple_resting_levels {
     .name = "multiple_resting_levels",
     .inputs = {
-        AddOrder{GTC, 1, 110, 10, Side::Sell},
-        AddOrder{GTC, 2, 120,  5, Side::Sell},
-        AddOrder{GTC, 3,  90,  8, Side::Buy},
-        AddOrder{GTC, 4,  80, 12, Side::Buy},
+        AddOrder{Limit, GTC, 1, 110, 10, Side::Sell},
+        AddOrder{Limit, GTC, 2, 120,  5, Side::Sell},
+        AddOrder{Limit, GTC, 3,  90,  8, Side::Buy},
+        AddOrder{Limit, GTC, 4,  80, 12, Side::Buy},
     },
     .expected_trades = {},
     .expected_levels = {
@@ -338,15 +345,222 @@ static const OrderBookTestCase tc_multiple_resting_levels {
 static const OrderBookTestCase tc_cancel_order {
     .name = "cancel_order",
     .inputs = {
-        AddOrder{GTC, 1, 100, 10, Side::Sell},   // first order at @100
-        AddOrder{GTC, 2, 100,  5, Side::Sell},   // second order at @100
-        AddOrder{GTC, 3,  90, 20, Side::Buy},    // sole bid
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},   // first order at @100
+        AddOrder{Limit, GTC, 2, 100,  5, Side::Sell},   // second order at @100
+        AddOrder{Limit, GTC, 3,  90, 20, Side::Buy},    // sole bid
         CancelOrder{1},                           // @100 level: qty 15→5, count 2→1
         CancelOrder{3},                           // removes bid level entirely
     },
     .expected_trades = {},
     .expected_levels = {
         {.side=Side::Sell, .price=100, .total_quantity=5, .order_count=1},
+    },
+};
+
+// ── 18. Market buy full fill ──────────────────────────────────────────────────
+// Market buy sweeps the entire resting ask. Execution price is the maker's
+// price (100), not a price field on the market order.
+static const OrderBookTestCase tc_market_buy_full_fill {
+    .name = "market_buy_full_fill",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Market, GTC, 2,   0, 10, Side::Buy},   // price=0 is ignored for market orders
+    },
+    .expected_trades = {
+        {.buyer_id=2, .seller_id=1, .price=100, .quantity=10},
+    },
+    .expected_levels = {},
+};
+
+// ── 19. Market buy partial fill ───────────────────────────────────────────────
+// Only 5 units are available; market order fills what it can and does not rest.
+static const OrderBookTestCase tc_market_buy_partial_fill {
+    .name = "market_buy_partial_fill",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100,  5, Side::Sell},
+        AddOrder{Market, GTC, 2,   0, 10, Side::Buy},   // fills 5, remainder gone (no resting)
+    },
+    .expected_trades = {
+        {.buyer_id=2, .seller_id=1, .price=100, .quantity=5},
+    },
+    .expected_levels = {},
+};
+
+// ── 20. Market buy no liquidity ───────────────────────────────────────────────
+// Nothing on the ask side — market order executes nothing and does not rest.
+static const OrderBookTestCase tc_market_buy_no_liquidity {
+    .name = "market_buy_no_liquidity",
+    .inputs = {
+        AddOrder{Market, GTC, 1, 0, 10, Side::Buy},
+    },
+    .expected_trades = {},
+    .expected_levels = {},
+};
+
+// ── 21. Market sell full fill ─────────────────────────────────────────────────
+// Market sell hits the best resting bid at maker price.
+static const OrderBookTestCase tc_market_sell_full_fill {
+    .name = "market_sell_full_fill",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100, 10, Side::Buy},
+        AddOrder{Market, GTC, 2,   0, 10, Side::Sell},
+    },
+    .expected_trades = {
+        {.buyer_id=1, .seller_id=2, .price=100, .quantity=10},
+    },
+    .expected_levels = {},
+};
+
+// ── 22. Market buy multi-level sweep ─────────────────────────────────────────
+// Market order sweeps two ask levels regardless of price — no price limit.
+// First fills the cheaper level (100), then the more expensive one (110).
+static const OrderBookTestCase tc_market_buy_multi_level {
+    .name = "market_buy_multi_level",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100,  5, Side::Sell},
+        AddOrder{Limit,  GTC, 2, 110,  5, Side::Sell},
+        AddOrder{Market, GTC, 3,   0, 10, Side::Buy},   // sweeps both levels
+    },
+    .expected_trades = {
+        {.buyer_id=3, .seller_id=1, .price=100, .quantity=5},
+        {.buyer_id=3, .seller_id=2, .price=110, .quantity=5},
+    },
+    .expected_levels = {},
+};
+
+// ── 23. Market sell partial fill ─────────────────────────────────────────────
+// Only 5 units of bid liquidity exist; market sell fills what's available
+// and the remainder is discarded (market orders never rest).
+static const OrderBookTestCase tc_market_sell_partial_fill {
+    .name = "market_sell_partial_fill",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100,  5, Side::Buy},
+        AddOrder{Market, GTC, 2,   0, 10, Side::Sell},  // fills 5, remainder gone
+    },
+    .expected_trades = {
+        {.buyer_id=1, .seller_id=2, .price=100, .quantity=5},
+    },
+    .expected_levels = {},
+};
+
+// ── 24. Market sell no liquidity ──────────────────────────────────────────────
+// Nothing on the bid side — market sell executes nothing and does not rest.
+static const OrderBookTestCase tc_market_sell_no_liquidity {
+    .name = "market_sell_no_liquidity",
+    .inputs = {
+        AddOrder{Market, GTC, 1, 0, 10, Side::Sell},
+    },
+    .expected_trades = {},
+    .expected_levels = {},
+};
+
+// ── 25. Market sell multi-level sweep ────────────────────────────────────────
+// Market sell sweeps two bid levels in descending price order (best bid first).
+static const OrderBookTestCase tc_market_sell_multi_level {
+    .name = "market_sell_multi_level",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100,  5, Side::Buy},
+        AddOrder{Limit,  GTC, 2,  90,  5, Side::Buy},
+        AddOrder{Market, GTC, 3,   0, 10, Side::Sell},  // hits @100 first, then @90
+    },
+    .expected_trades = {
+        {.buyer_id=1, .seller_id=3, .price=100, .quantity=5},
+        {.buyer_id=2, .seller_id=3, .price=90,  .quantity=5},
+    },
+    .expected_levels = {},
+};
+
+// ── 26. Market buy FIFO within level ─────────────────────────────────────────
+// Two resting sells at the same price; market buy must fill the earlier-
+// arriving order first (price-time priority).
+static const OrderBookTestCase tc_market_buy_fifo {
+    .name = "market_buy_fifo",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100,  6, Side::Sell},  // arrives first
+        AddOrder{Limit,  GTC, 2, 100,  6, Side::Sell},  // arrives second
+        AddOrder{Market, GTC, 3,   0,  8, Side::Buy},   // fills 6 from #1, then 2 from #2
+    },
+    .expected_trades = {
+        {.buyer_id=3, .seller_id=1, .price=100, .quantity=6},
+        {.buyer_id=3, .seller_id=2, .price=100, .quantity=2},
+    },
+    .expected_levels = {
+        {.side=Side::Sell, .price=100, .total_quantity=4, .order_count=1},
+    },
+};
+
+// ── 27. Market sell FIFO within level ────────────────────────────────────────
+// Two resting bids at the same price; market sell must fill the earlier-
+// arriving order first.
+static const OrderBookTestCase tc_market_sell_fifo {
+    .name = "market_sell_fifo",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100,  6, Side::Buy},   // arrives first
+        AddOrder{Limit,  GTC, 2, 100,  6, Side::Buy},   // arrives second
+        AddOrder{Market, GTC, 3,   0,  8, Side::Sell},  // fills 6 from #1, then 2 from #2
+    },
+    .expected_trades = {
+        {.buyer_id=1, .seller_id=3, .price=100, .quantity=6},
+        {.buyer_id=2, .seller_id=3, .price=100, .quantity=2},
+    },
+    .expected_levels = {
+        {.side=Side::Buy, .price=100, .total_quantity=4, .order_count=1},
+    },
+};
+
+// ── 28. Market buy after cancel ───────────────────────────────────────────────
+// A resting ask is cancelled; a subsequent market buy fills only against
+// the remaining liquidity, confirming the book is consistent post-cancel.
+static const OrderBookTestCase tc_market_buy_after_cancel {
+    .name = "market_buy_after_cancel",
+    .inputs = {
+        AddOrder{Limit,  GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit,  GTC, 2, 100,  5, Side::Sell},
+        CancelOrder{1},                                  // remove first ask; only #2 remains
+        AddOrder{Market, GTC, 3,   0,  5, Side::Buy},   // fills entirely against #2
+    },
+    .expected_trades = {
+        {.buyer_id=3, .seller_id=2, .price=100, .quantity=5},
+    },
+    .expected_levels = {},
+};
+
+static const OrderBookTestCase tc_all_in_one_market_and_limit_orders {
+    .name = "all_in_one_market_and_limit_order",
+
+    .inputs = {
+        AddOrder{OrderType::Limit,  TimeInForce::GoodTillCancel, 1, 100, 10, Side::Sell},
+        AddOrder{OrderType::Limit,  TimeInForce::GoodTillCancel, 2, 105, 20, Side::Sell},
+        AddOrder{OrderType::Limit,  TimeInForce::GoodTillCancel, 3, 110, 30, Side::Sell},
+
+        AddOrder{OrderType::Limit,  TimeInForce::GoodTillCancel, 4, 95, 15, Side::Buy},
+        AddOrder{OrderType::Limit,  TimeInForce::GoodTillCancel, 5, 90, 20, Side::Buy},
+
+        AddOrder{OrderType::Market, TimeInForce::ImmediateOrCancel, 6, 0, 25, Side::Buy},
+        AddOrder{OrderType::Market, TimeInForce::ImmediateOrCancel, 7, 0, 20, Side::Sell},
+
+        AddOrder{OrderType::Limit,  TimeInForce::GoodTillCancel, 8, 105, 20, Side::Buy},
+
+        AddOrder{OrderType::Market, TimeInForce::ImmediateOrCancel, 9, 0, 40, Side::Sell},
+
+        AddOrder{OrderType::Limit,  TimeInForce::GoodTillCancel, 10, 120, 5, Side::Sell},
+    },
+
+    .expected_trades = {
+        {.buyer_id=6, .seller_id=1, .price=100, .quantity=10},
+        {.buyer_id=6, .seller_id=2, .price=105, .quantity=15},
+
+        {.buyer_id=4, .seller_id=7, .price=95, .quantity=15},
+        {.buyer_id=5, .seller_id=7, .price=90, .quantity=5},
+
+        {.buyer_id=8, .seller_id=2, .price=105, .quantity=5},
+        {.buyer_id=8, .seller_id=9, .price=105, .quantity=15},
+        {.buyer_id=5, .seller_id=9, .price=90, .quantity=15},
+    },
+
+    .expected_levels = {
+        {Side::Sell, 110, 30, 1},
+        {Side::Sell, 120, 5, 1},
     },
 };
 
@@ -368,6 +582,21 @@ void data_driven_suite() {
     run_order_book_test(tc_cancel_then_rematch);
     run_order_book_test(tc_multiple_resting_levels);
     run_order_book_test(tc_cancel_order);
+    run_order_book_test(tc_market_buy_full_fill);
+    run_order_book_test(tc_market_buy_partial_fill);
+    run_order_book_test(tc_market_buy_no_liquidity);
+    run_order_book_test(tc_market_sell_full_fill);
+    run_order_book_test(tc_market_buy_multi_level);
+    run_order_book_test(tc_market_sell_partial_fill);
+    run_order_book_test(tc_market_sell_no_liquidity);
+    run_order_book_test(tc_market_sell_multi_level);
+    run_order_book_test(tc_market_buy_fifo);
+    run_order_book_test(tc_market_sell_fifo);
+    run_order_book_test(tc_market_buy_after_cancel);
+    run_order_book_test(tc_all_in_one_market_and_limit_orders);
+}
+void run_one(){
+    run_order_book_test(tc_all_in_one_market_and_limit_orders, true);
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────
@@ -379,6 +608,7 @@ int data_driven_summary() {
     if (dd::fail_count > 0) {
         std::cout << "  Failed: " << dd::fail_count << "\n";
         return 1;
+
     }
     std::cout << "  All tests passed.\n";
     return 0;

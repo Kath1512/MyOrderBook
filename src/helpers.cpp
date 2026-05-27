@@ -9,3 +9,11 @@ std::ostream& operator << (std::ostream& os, const Side& obj){
     os << std::string(to_string(obj));
     return os;
 }
+std::ostream& operator << (std::ostream& os, const OrderType& obj){
+    os << std::string(to_string(obj));
+    return os;
+}
+std::ostream& operator << (std::ostream& os, const AddOrderStatus& obj){
+    os << std::string(to_string(obj));
+    return os;
+}

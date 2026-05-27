@@ -8,18 +8,26 @@ using Price = std::int64_t;
 using Quantity = std::int64_t;
 using TradeId = std::uint64_t;
 
-enum class Side{
+enum class Side {
     Buy,
     Sell
 };
 
-enum class TimeInForce{
+enum class TimeInForce {
     FillOrKill,
     GoodTillCancel,
     ImmediateOrCancel
 };
 
-enum class OrderType{
+enum class OrderType {
     Limit,
     Market
+};
+
+enum class AddOrderStatus {
+    FullyFilled,
+    PartiallyFilled,
+    Resting,
+    Failed,
+    Rejected
 };

@@ -7,7 +7,7 @@ Order::Order(OrderType order_type,
              Quantity quantity,
              Side side,
              SequenceNumber sequence_number)
-    :   //order_type_(order_type),
+    :   order_type_(order_type),
         time_in_force_(time_in_force),
         order_id_(order_id),
         price_(price),
@@ -19,9 +19,9 @@ Order::Order(OrderType order_type,
                 throw std::logic_error("Order quantity cannot be smaller than or equal to 0");
             }
 
-            if(price <= 0){
-                throw std::logic_error("Order price cannot be smaller than or equal to 0");
-            }
+            // if(price <= 0){
+            //     throw std::logic_error("Order price cannot be smaller than or equal to 0");
+            // }
         }
 
 OrderType Order::get_order_type() const {

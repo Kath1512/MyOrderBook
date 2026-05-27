@@ -52,6 +52,7 @@ namespace dd {
 // ── Input actions ─────────────────────────────────────────────────────────────
 
 struct AddOrder {
+    OrderType      order_type;
     TimeInForce    tif;
     OrderId        id;
     Price          price;
@@ -111,10 +112,11 @@ void check_levels(const OrderBook&                  book,
                   const std::vector<ExpectedLevel>& expected);
 
 // Build a fresh book, replay all inputs, then call check_trades + check_levels.
-void run_order_book_test(const OrderBookTestCase& tc);
+void run_order_book_test(const OrderBookTestCase& tc, bool logging);
 
 // Run all built-in example test cases.
 void data_driven_suite();
+void run_one();
 
 // Print totals. Returns 0 if all passed, 1 otherwise. Use as main() return value.
 int data_driven_summary();
