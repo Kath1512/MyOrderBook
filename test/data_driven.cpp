@@ -50,9 +50,7 @@ void run_order_book_test(const OrderBookTestCase& tc, bool logging = false) {
 
     OrderBook book;
     for (const TestInput& input : tc.inputs) {
-        std::visit([&book](const auto& action) {
-            book.process(action);
-        }, input);
+        book.process_message(input);
     }
 
     check_trades(book.get_trades(), tc.expected_trades);
@@ -652,6 +650,51 @@ static const OrderBookTestCase tc_modify_nonexistent {
     },
 };
 
+// ── 36. process_message: all three message types in one sequence ──────────────
+// Sends AddOrder, ModifyOrder, and CancelOrder all through process_message to
+// verify the variant dispatch routes each alternative correctly.
+//   - Order 1 (sell @100) is added, then moved to @110 via ModifyOrder.
+//   - Order 2 (sell @105) is added, then cancelled via CancelOrder.
+//   - Order 3 (buy @110) is added and crosses the modified order 1 at @110.
+// Expected: one trade (3 buys from 1 at 110), book empty afterward.
+static const OrderBookTestCase tc_process_message_dispatch {
+    .name = "process_message_dispatch",
+    .inputs = {
+        AddOrder{Limit, GTC, 1, 100, 10, Side::Sell},
+        AddOrder{Limit, GTC, 2, 105,  5, Side::Sell},
+        ModifyOrder{1, 110, 10},                         // moves order 1: @100 → @110
+        CancelOrder{2},                                  // removes order 2
+        AddOrder{Limit, GTC, 3, 110, 10, Side::Buy},    // crosses order 1 at 110
+    },
+    .expected_trades = {
+        {.buyer_id=3, .seller_id=1, .price=110, .quantity=10},
+    },
+    .expected_levels = {},
+};
+
+// ── 37. process_message: interleaved adds and modifies ────────────────────────
+// Stress-tests the dispatch path with a longer sequence where orders are
+// modified multiple times before a final sweep clears the book.
+//   - Order 1 starts @90, is bumped to @95, then to @100.
+//   - Order 2 starts @100 and is never touched.
+//   - Market buy consumes both at their final prices (FIFO within @100 level:
+//     order 2 arrived first at that price, order 1 re-queued behind it).
+static const OrderBookTestCase tc_process_message_multi_modify {
+    .name = "process_message_multi_modify",
+    .inputs = {
+        AddOrder{Limit, GTC, 1,  90, 10, Side::Sell},   // rests @90
+        AddOrder{Limit, GTC, 2, 100, 10, Side::Sell},   // rests @100
+        ModifyOrder{1,  95, 10},                         // order 1: @90 → @95
+        ModifyOrder{1, 100, 10},                         // order 1: @95 → @100 (behind order 2)
+        AddOrder{Market, GTC, 3, 0, 20, Side::Buy},     // sweeps @100: fills 2 first, then 1
+    },
+    .expected_trades = {
+        {.buyer_id=3, .seller_id=2, .price=100, .quantity=10},
+        {.buyer_id=3, .seller_id=1, .price=100, .quantity=10},
+    },
+    .expected_levels = {},
+};
+
 void data_driven_suite() {
     run_order_book_test(tc_exact_match);
     run_order_book_test(tc_partial_fill);
@@ -689,6 +732,9 @@ void data_driven_suite() {
     run_order_book_test(tc_modify_loses_priority);
     run_order_book_test(tc_modify_crosses_book);
     run_order_book_test(tc_modify_nonexistent);
+    // process_message dispatch
+    run_order_book_test(tc_process_message_dispatch);
+    run_order_book_test(tc_process_message_multi_modify);
 }
 void run_one(){
     run_order_book_test(tc_all_in_one_market_and_limit_orders, true);

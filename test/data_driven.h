@@ -51,8 +51,9 @@ namespace dd {
 
 
 
-// A single test step: add, cancel, or modify an order.
-using TestInput = std::variant<AddOrder, CancelOrder, ModifyOrder>;
+// A single test step — same alternatives as Message, so process_message() can
+// be called directly on each input without an intermediate visitor.
+using TestInput = Message;
 
 
 // ── Expected outcomes ─────────────────────────────────────────────────────────
