@@ -7,12 +7,15 @@
 #include <stdexcept>
 #include <algorithm>
 #include <iostream>
+#include <mutex>
+#include <condition_variable>
 
 #include "types.h"
 #include "order.h"
 #include "price_level.h"
 #include "trade.h"
 #include "order_messages.h"
+#include "order_event.h"
 
 
 struct OrderLocation {
@@ -98,7 +101,9 @@ using TradeHistory = std::vector<Trade>;
 using AskLevels = std::map<Price, PriceLevel>;
 using BidLevels = std::map<Price, PriceLevel, std::greater<Price>>;
 using OrderLookUp = std::unordered_map<OrderId, OrderLocation>;
-
+using EventQueue = std::queue<Event>;
+using MaybeEvent = std::optional<Event>;
+using Mutex = std::mutex;
 
 class OrderBook{
 private:
@@ -106,6 +111,9 @@ private:
     AskLevels asks_;
     TradeHistory trades_;
     OrderLookUp order_look_up_;
+    EventQueue event_queue_;
+    Mutex event_mtx_; //need improvement -> use lock free
+    std::condition_variable event_cv_;
 
     static inline bool cmp_buy(const Price buy, const Price sell){
         return buy >= sell;
@@ -115,18 +123,20 @@ private:
         return sell <= buy;
     }
 
+    
 public:
     bool is_empty() const;
     bool has_bids() const;
     bool has_asks() const;
-
+    
     Price best_bid() const;
     Price best_ask() const;
     const TradeHistory& get_trades() const;
-
+    
     // ── Level inspection (used by the test framework) ─────────────────────
     bool has_level(Side side, Price price) const;
     Quantity level_quantity(Side side, Price price) const;
+    
     std::size_t level_order_count(Side side, Price price) const;
     std::size_t bid_level_count() const;
     std::size_t ask_level_count() const;
@@ -262,6 +272,14 @@ public:
     void process(const CancelOrder& cancel_order_msg);
     
     void process_message(const Message& msg);
+
+    //Event control
+    
+    void add_event(const Event& event);
+    bool has_event() const;
+    MaybeEvent wait_and_pop_event(AtomicBool& running);
+    void notify_events_shutdown();
+
     //debug method
     template<typename Levels>
     std::string levels_to_string(Levels& levels) const {

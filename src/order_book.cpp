@@ -159,7 +159,18 @@ Quantity OrderBook::execute_trade(Order& incoming_order, PriceLevel& counterpart
     );
 
     Trade trade = Trade::from_match(incoming_order, counterpart_level.front_order());
-    trades_.push_back(trade); //need improvment: preallocate
+
+    //add Trade event
+    add_event(TradeExecuted{
+        .buyer_id = trade.get_buyer().order_id_,
+        .seller_id = trade.get_seller().order_id_,
+        .price = trade.get_execution_price(),
+        .quantity = trade.get_execution_quantity(),
+        .aggressive_side = trade.get_aggressor_side()
+    });
+
+    //add trades
+    trades_.push_back(trade); //need improvment: preallocate (kafka)
 
     //front order getting filled should be removed out of lookup
     bool getFilled = (counterpart_level.front_order().get_remaining_quantity() == execution_quantity);
@@ -220,19 +231,63 @@ bool OrderBook::modify_order(OrderId order_id, Price new_price, Quantity new_qua
 
 
 void OrderBook::process(const AddOrder& add_order_msg){
-    add_order(Order(add_order_msg));
+    AddOrderResult res = add_order(Order(add_order_msg));
+
+    OrderId id = add_order_msg.order_id;
+
+    if(res.status_ == AddOrderStatus::Failed || res.status_ == AddOrderStatus::Rejected){
+        add_event(OrderRejected{
+            .order_id = id,
+            .reason = "No reason"
+        });
+        return;
+    }
+
+    add_event(OrderAccepted{.order_id = id});
 }
 
 void OrderBook::process(const ModifyOrder& modify_order_msg){
-    modify_order(
+    
+    auto [id, new_price, new_quantity] = modify_order_msg;
+
+    bool modified = modify_order(
         modify_order_msg.id,
         modify_order_msg.new_price,
         modify_order_msg.new_quantity
     );
+    
+    if(!modified){
+        add_event(ModifyRejected{
+            .order_id = id,
+            .reason = "Modify failed"
+        });
+        return;
+    }
+    
+
+    add_event(OrderModified{
+        .order_id = id,
+        .new_price = new_price,
+        .new_quantity = new_quantity
+    });
 }
 
 void OrderBook::process(const CancelOrder& cancel_order_msg){
-    cancel_order(cancel_order_msg.id);
+    bool cancelled = cancel_order(cancel_order_msg.id);
+    
+    OrderId id = cancel_order_msg.id;
+    if(!cancelled){
+        add_event(OrderRejected{
+            .order_id = id,
+            .reason = "Cancel failed"
+        });
+        return;
+    }
+
+    add_event(OrderCanceled{
+        .order_id = id
+    });
+
 }
 
 void OrderBook::process_message(const Message& msg){
@@ -241,6 +296,49 @@ void OrderBook::process_message(const Message& msg){
         },
         msg
     );
+}
+
+bool OrderBook::has_event() const {
+    return !event_queue_.empty();
+}
+
+void OrderBook::add_event(const Event& event){
+    //need lock?
+    {
+        std::lock_guard<std::mutex> lock(event_mtx_);
+        event_queue_.push(event);
+        // std::visit(
+        //     [](auto&& ev){
+        //         std::cout << ev << "\n";
+        //     },
+        //     event
+        // );
+    }
+    event_cv_.notify_one();
+}
+
+MaybeEvent OrderBook::wait_and_pop_event(AtomicBool& running){
+    std::unique_lock<std::mutex> lock(event_mtx_); //need improvement: use lock-free queue
+
+    event_cv_.wait(
+        lock,
+        [&]{
+            return !event_queue_.empty() || !running;
+        }
+    );
+
+    if(event_queue_.empty()){
+        return std::nullopt;
+    }
+
+    Event ev = std::move(event_queue_.front());
+    event_queue_.pop();
+
+    return ev;
+}
+
+void OrderBook::notify_events_shutdown() {
+    event_cv_.notify_all();
 }
 
 

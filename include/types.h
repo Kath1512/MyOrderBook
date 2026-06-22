@@ -1,12 +1,14 @@
 #pragma once
 #include <cstdint>
 #include <string_view>
+#include <atomic>
 
 using OrderId = std::uint64_t;
 using SequenceNumber = std::uint64_t;
 using Price = std::int64_t;
 using Quantity = std::int64_t;
 using TradeId = std::uint64_t;
+using AtomicBool = std::atomic<bool>;
 
 enum class Side {
     Buy,

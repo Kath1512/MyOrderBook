@@ -72,6 +72,8 @@ add_library(order_book_lib STATIC
     src/order_book.cpp
     src/trade.cpp
     src/helpers.cpp
+    src/event_consumer.cpp
+    src/order_event.cpp
 )
 
 # target_include_directories tells the compiler where to find #include files.
