@@ -2,20 +2,18 @@
 #include <event_consumer.h>
 
 void consume_events(OrderBook& book, AtomicBool& running) {
+    Event item;
     int cnt = 0;
     while (running || book.has_event()) {
-        auto ev = book.wait_and_pop_event(running);
+        bool success = book.pop_event(item);
         cnt++;
-        if (!ev) {
-            continue;
-        }
-        
-        std::visit(
-            [](auto&& event) {
-                std::cout << event << '\n';
-            },
-            ev.value()
-        );
+
+        if(!success) continue;
+
+        std::visit([](auto&& event) {
+            std::cout << event << "\n";
+        }, item);
     }
-    std::cout << "Total loops: " << cnt << std::endl;
+
+    std::cout << "Total loops: " << cnt << "\n";
 }

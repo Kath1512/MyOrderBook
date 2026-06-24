@@ -3,12 +3,14 @@
 #include <string_view>
 #include <atomic>
 
+using Size = std::size_t;
 using OrderId = std::uint64_t;
 using SequenceNumber = std::uint64_t;
 using Price = std::int64_t;
 using Quantity = std::int64_t;
 using TradeId = std::uint64_t;
 using AtomicBool = std::atomic<bool>;
+using Counter = std::int64_t;
 
 enum class Side {
     Buy,

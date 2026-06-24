@@ -7,8 +7,8 @@
 #include <stdexcept>
 #include <algorithm>
 #include <iostream>
-#include <mutex>
-#include <condition_variable>
+// #include <mutex>
+// #include <condition_variable>
 
 #include "types.h"
 #include "order.h"
@@ -16,6 +16,8 @@
 #include "trade.h"
 #include "order_messages.h"
 #include "order_event.h"
+#include "ring_buffer.h"
+#include "constant.h"
 
 
 struct OrderLocation {
@@ -104,6 +106,7 @@ using OrderLookUp = std::unordered_map<OrderId, OrderLocation>;
 using EventQueue = std::queue<Event>;
 using MaybeEvent = std::optional<Event>;
 using Mutex = std::mutex;
+using EventRingBuffer = RingBuffer<Event, RING_BUFFER_SIZE>;
 
 class OrderBook{
 private:
@@ -111,9 +114,11 @@ private:
     AskLevels asks_;
     TradeHistory trades_;
     OrderLookUp order_look_up_;
-    EventQueue event_queue_;
-    Mutex event_mtx_; //need improvement -> use lock free
-    std::condition_variable event_cv_;
+    // EventQueue event_queue_;
+    // Mutex event_mtx_; //need improvement -> use lock free
+    // std::condition_variable event_cv_;
+    Counter drop_events_count_;
+    EventRingBuffer ring_buffer_;
 
     static inline bool cmp_buy(const Price buy, const Price sell){
         return buy >= sell;
@@ -142,8 +147,8 @@ public:
     std::size_t ask_level_count() const;
 
     template<typename BookLevelsSide>
-    bool add_order_to_side(BookLevelsSide& levels, Order&& order){ //need improvement
-        if(order.is_filled()) return false;
+    bool add_order_to_side(BookLevelsSide& levels, Order&& order){ //need improvement, need more informed result instead of fail/pass
+        if(order.is_filled()) return true; 
 
         Price price = order.get_price();
 
@@ -275,10 +280,12 @@ public:
 
     //Event control
     
-    void add_event(const Event& event);
+    // MaybeEvent wait_and_pop_event(AtomicBool& running);
+    // void notify_events_shutdown();
+    
     bool has_event() const;
-    MaybeEvent wait_and_pop_event(AtomicBool& running);
-    void notify_events_shutdown();
+    bool add_event(Event event);
+    bool pop_event(Event& storage);
 
     //debug method
     template<typename Levels>

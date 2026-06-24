@@ -52,7 +52,6 @@ void test_event(){
     }
 
     running = false;
-    book.notify_events_shutdown();
     consumer.join();
 
     std::cout << book << "\n";

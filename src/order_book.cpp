@@ -298,48 +298,61 @@ void OrderBook::process_message(const Message& msg){
     );
 }
 
+bool OrderBook::add_event(Event event){
+    bool added = ring_buffer_.push(std::move(event));
+    if(!added){
+        drop_events_count_++;
+    }
+    return added;
+}
+
+bool OrderBook::pop_event(Event& storage) {
+    bool popped = ring_buffer_.pop(storage);
+    return popped;
+}
+
 bool OrderBook::has_event() const {
-    return !event_queue_.empty();
+    return !ring_buffer_.empty();
 }
 
-void OrderBook::add_event(const Event& event){
-    //need lock?
-    {
-        std::lock_guard<std::mutex> lock(event_mtx_);
-        event_queue_.push(event);
-        // std::visit(
-        //     [](auto&& ev){
-        //         std::cout << ev << "\n";
-        //     },
-        //     event
-        // );
-    }
-    event_cv_.notify_one();
-}
+// void OrderBook::add_event(const Event& event){
+//     //need lock?
+//     {
+//         std::lock_guard<std::mutex> lock(event_mtx_);
+//         event_queue_.push(event);
+//         // std::visit(
+//         //     [](auto&& ev){
+//         //         std::cout << ev << "\n";
+//         //     },
+//         //     event
+//         // );
+//     }
+//     event_cv_.notify_one();
+// }
 
-MaybeEvent OrderBook::wait_and_pop_event(AtomicBool& running){
-    std::unique_lock<std::mutex> lock(event_mtx_); //need improvement: use lock-free queue
+// MaybeEvent OrderBook::wait_and_pop_event(AtomicBool& running){
+//     std::unique_lock<std::mutex> lock(event_mtx_); //need improvement: use lock-free queue
 
-    event_cv_.wait(
-        lock,
-        [&]{
-            return !event_queue_.empty() || !running;
-        }
-    );
+//     event_cv_.wait(
+//         lock,
+//         [&]{
+//             return !event_queue_.empty() || !running;
+//         }
+//     );
 
-    if(event_queue_.empty()){
-        return std::nullopt;
-    }
+//     if(event_queue_.empty()){
+//         return std::nullopt;
+//     }
 
-    Event ev = std::move(event_queue_.front());
-    event_queue_.pop();
+//     Event ev = std::move(event_queue_.front());
+//     event_queue_.pop();
 
-    return ev;
-}
+//     return ev;
+// }
 
-void OrderBook::notify_events_shutdown() {
-    event_cv_.notify_all();
-}
+// void OrderBook::notify_events_shutdown() {
+//     event_cv_.notify_all();
+// }
 
 
 //debug method

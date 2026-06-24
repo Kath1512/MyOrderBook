@@ -1,8 +1,7 @@
 #pragma once
 #include<atomic>
 #include<array>
-
-using Size = std::size_t;
+#include "types.h"
 
 template<typename T, Size Capacity>
 class RingBuffer{
@@ -11,6 +10,8 @@ private:
     std::array<T, Capacity> buffer_;
     alignas(64) std::atomic<Size> head_{0};
     alignas(64) std::atomic<Size> tail_{0};
+
+    static constexpr Size next(Size i);
 public:
     RingBuffer() = default;
 
